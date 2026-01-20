@@ -1,0 +1,63 @@
+<svg width="320" height="320" viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background gradient -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e40af;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#7c3aed;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ec4899;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="textGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f8fafc;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="rgba(0,0,0,0.1)"/>
+    </filter>
+  </defs>
+
+  <!-- Main background -->
+  <rect width="320" height="320" rx="24" fill="url(#bgGradient)"/>
+
+  <!-- Decorative elements -->
+  <circle cx="60" cy="60" r="20" fill="rgba(255,255,255,0.1)"/>
+  <circle cx="260" cy="80" r="15" fill="rgba(255,255,255,0.08)"/>
+  <circle cx="280" cy="240" r="12" fill="rgba(255,255,255,0.06)"/>
+  <circle cx="40" cy="280" r="18" fill="rgba(255,255,255,0.05)"/>
+
+  <!-- Geometric shapes -->
+  <rect x="200" y="200" width="80" height="4" rx="2" fill="rgba(255,255,255,0.2)"/>
+  <rect x="220" y="220" width="60" height="4" rx="2" fill="rgba(255,255,255,0.15)"/>
+  <rect x="240" y="240" width="40" height="4" rx="2" fill="rgba(255,255,255,0.1)"/>
+
+  <!-- Main content -->
+  <text x="160" y="120" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="url(#textGradient)" filter="url(#shadow)">
+    AI in het bedrijfsleven
+  </text>
+
+  <text x="160" y="150" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="rgba(255,255,255,0.9)">
+    Revolutionaire technologieën voor
+  </text>
+
+  <text x="160" y="170" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="rgba(255,255,255,0.9)">
+    Nederlandse ondernemingen
+  </text>
+
+  <!-- Bottom section -->
+  <rect x="20" y="200" width="280" height="80" rx="12" fill="rgba(255,255,255,0.1)"/>
+
+  <circle cx="50" cy="230" r="16" fill="rgba(255,255,255,0.2)"/>
+  <text x="50" y="236" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="white" font-weight="bold">AI</text>
+
+  <text x="80" y="220" font-family="Arial, sans-serif" font-size="12" fill="white" font-weight="bold">
+    GenPostAI
+  </text>
+  <text x="80" y="235" font-family="Arial, sans-serif" font-size="10" fill="rgba(255,255,255,0.8)">
+    Powered by AI-group.nl
+  </text>
+
+  <!-- Call to action -->
+  <rect x="200" y="280" width="100" height="24" rx="12" fill="rgba(255,255,255,0.2)"/>
+  <text x="250" y="296" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white" font-weight="bold">
+    Meer weten ’
+  </text>
+</svg>
