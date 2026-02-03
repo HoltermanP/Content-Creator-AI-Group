@@ -1,4 +1,5 @@
 import { NextAuthOptions } from "next-auth";
+import { getToken } from "next-auth/jwt";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import CredentialsProvider from "next-auth/providers/credentials";
 import EmailProvider from "next-auth/providers/email";
@@ -12,6 +13,42 @@ export async function getUserFromSession(session: any) {
 
   return await prisma.user.findUnique({
     where: { email: session.user.email }
+  });
+}
+
+/** Gebruiker ophalen voor API Route Handlers: leest sessie uit cookies() van next/headers (betrouwbaar in App Router) */
+export async function getAuthUser() {
+  const secret = process.env.NEXTAUTH_SECRET;
+  if (!secret?.trim()) {
+    console.error("NEXTAUTH_SECRET ontbreekt in .env – sessie kan niet worden gelezen.");
+    return null;
+  }
+  const { cookies, headers } = await import("next/headers");
+  const cookieStore = await cookies();
+  const headersList = await headers();
+  const token = await getToken({
+    req: {
+      cookies: cookieStore,
+      headers: headersList,
+    } as any,
+    secret,
+  });
+  if (!token?.email) return null;
+  return await prisma.user.findUnique({
+    where: { email: token.email },
+  });
+}
+
+/** @deprecated Gebruik getAuthUser() in Route Handlers. */
+export async function getUserFromRequest(req: Request) {
+  const token = await getToken({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    req: req as any,
+    secret: process.env.NEXTAUTH_SECRET,
+  });
+  if (!token?.email) return null;
+  return await prisma.user.findUnique({
+    where: { email: token.email },
   });
 }
 
@@ -106,7 +143,7 @@ export const authOptions: NextAuthOptions = {
       }
 
       // Link account to user
-      if (account && user) {
+      if (account && user?.id) {
         try {
           await prisma.account.upsert({
             where: {
@@ -135,11 +172,49 @@ export const authOptions: NextAuthOptions = {
         }
       }
 
+      // Abonnement en credits in token voor weergave in header
+      if (token.id) {
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: token.id as string },
+            select: {
+              role: true,
+              credits: {
+                select: { amount: true }
+              },
+              subscriptions: {
+                where: { status: "ACTIVE" },
+                orderBy: { updatedAt: "desc" },
+                take: 1,
+                select: { plan: true }
+              }
+            }
+          });
+          if (dbUser) {
+            token.role = dbUser.role ?? "MEMBER";
+            token.subscriptionPlan = dbUser.subscriptions[0]?.plan ?? "FREE";
+            token.creditsRemaining = dbUser.credits.reduce((sum, c) => sum + c.amount, 0);
+          }
+        } catch {
+          // negeer bij fout
+        }
+      }
+      // Altijd fallbacks voor header-weergave
+      if (token.subscriptionPlan === undefined) token.subscriptionPlan = "FREE";
+      if (typeof token.creditsRemaining !== "number") token.creditsRemaining = 0;
+      // Big Brother: alleen de gebruiker met dit e-mailadres ziet het admin-dashboard
+      const bigBrotherEmail = process.env.BIG_BROTHER_EMAIL?.trim();
+      (token as any).isBigBrother = !!(bigBrotherEmail && token.email === bigBrotherEmail);
+
       return token;
     },
     async session({ session, token }) {
       if (token && session.user) {
         (session.user as any).id = token.id as string;
+        (session.user as any).role = token.role as string;
+        (session.user as any).subscriptionPlan = token.subscriptionPlan as string;
+        (session.user as any).creditsRemaining = token.creditsRemaining as number;
+        (session.user as any).isBigBrother = !!(token as any).isBigBrother;
       }
 
       return session;

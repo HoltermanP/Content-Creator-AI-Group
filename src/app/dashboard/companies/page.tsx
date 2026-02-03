@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -59,8 +60,6 @@ interface Company {
   keyTopics?: string[];
   socialLinks?: {
     linkedin?: string;
-    twitter?: string;
-    facebook?: string;
   };
   createdAt: string;
   updatedAt: string;
@@ -80,9 +79,18 @@ interface CompanyFormData {
   brandVoice: string;
   keyTopics: string;
   linkedinUrl: string;
-  twitterUrl: string;
-  facebookUrl: string;
 }
+
+const DOELGROEP_OPTIES = [
+  "ZZP'ers & freelancers",
+  "MKB-bedrijven",
+  "Corporate / enterprise",
+  "Startups & scale-ups",
+  "Non-profit / maatschappelijke organisaties",
+  "Overheid / publieke sector",
+  "HR & recruitment",
+  "Marketing & sales professionals",
+];
 
 export default function CompaniesPage() {
   const { data: session, status } = useSession();
@@ -94,6 +102,8 @@ export default function CompaniesPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isFetchingFromWeb, setIsFetchingFromWeb] = useState(false);
   const [fetchWebsiteUrl, setFetchWebsiteUrl] = useState("");
+  const [selectedAudiences, setSelectedAudiences] = useState<string[]>([]);
+  const [otherAudience, setOtherAudience] = useState("");
 
   const [formData, setFormData] = useState<CompanyFormData>({
     name: "",
@@ -106,9 +116,7 @@ export default function CompaniesPage() {
     targetAudience: "",
     brandVoice: "",
     keyTopics: "",
-    linkedinUrl: "",
-    twitterUrl: "",
-    facebookUrl: ""
+    linkedinUrl: ""
   });
 
   useEffect(() => {
@@ -123,16 +131,14 @@ export default function CompaniesPage() {
 
   const fetchCompanies = async () => {
     try {
-      const response = await fetch('/api/companies');
-      if (response.ok) {
-        const data = await response.json();
+      const response = await fetch('/api/companies', { credentials: 'include' });
+      const data = await response.json();
+      if (response.ok && Array.isArray(data)) {
         setCompanies(data);
       } else {
-        console.error('Failed to fetch companies');
         setCompanies([]);
       }
-    } catch (error) {
-      console.error('Error fetching companies:', error);
+    } catch {
       setCompanies([]);
     } finally {
       setLoading(false);
@@ -151,11 +157,31 @@ export default function CompaniesPage() {
       targetAudience: "",
       brandVoice: "",
       keyTopics: "",
-      linkedinUrl: "",
-      twitterUrl: "",
-      facebookUrl: ""
+      linkedinUrl: ""
     });
     setFetchWebsiteUrl("");
+    setSelectedAudiences([]);
+    setOtherAudience("");
+  };
+
+  const syncAudienceState = (rawAudience: string | undefined | null) => {
+    const value = rawAudience || "";
+    if (!value.trim()) {
+      setSelectedAudiences([]);
+      setOtherAudience("");
+      return;
+    }
+
+    const parts = value
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    const selected = parts.filter((p) => DOELGROEP_OPTIES.includes(p));
+    const rest = parts.filter((p) => !DOELGROEP_OPTIES.includes(p));
+
+    setSelectedAudiences(selected);
+    setOtherAudience(rest.join(", "));
   };
 
   const openCreateDialog = () => {
@@ -176,10 +202,9 @@ export default function CompaniesPage() {
       targetAudience: company.targetAudience || "",
       brandVoice: company.brandVoice || "",
       keyTopics: company.keyTopics?.join(", ") || "",
-      linkedinUrl: company.socialLinks?.linkedin || "",
-      twitterUrl: company.socialLinks?.twitter || "",
-      facebookUrl: company.socialLinks?.facebook || ""
+      linkedinUrl: company.socialLinks?.linkedin || ""
     });
+    syncAudienceState(company.targetAudience);
     setEditingCompany(company);
     setIsCreateDialogOpen(true);
   };
@@ -187,16 +212,22 @@ export default function CompaniesPage() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      const combinedAudience = [
+        ...selectedAudiences,
+        otherAudience.trim(),
+      ]
+        .filter(Boolean)
+        .join(", ");
+
       const companyData = {
         name: formData.name,
         industry: formData.industry,
         description: formData.description,
         website: formData.website,
+        targetAudience: combinedAudience,
         linkedinUrl: formData.linkedinUrl,
         socialLinks: {
-          linkedin: formData.linkedinUrl,
-          twitter: formData.twitterUrl,
-          facebook: formData.facebookUrl
+          linkedin: formData.linkedinUrl
         }
       };
 
@@ -204,38 +235,42 @@ export default function CompaniesPage() {
         // Update company via API
         const response = await fetch(`/api/companies/${editingCompany.id}`, {
           method: 'PUT',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(companyData),
         });
 
+        const dataUpdate = await response.json().catch(() => ({}));
         if (response.ok) {
-          const updatedCompany = await response.json();
-          setCompanies(prev => prev.map(c => c.id === editingCompany.id ? updatedCompany : c));
+          setCompanies(prev => prev.map(c => c.id === editingCompany.id ? dataUpdate : c));
           toast.success("Bedrijf bijgewerkt!");
         } else {
-          throw new Error('Failed to update company');
+          toast.error(dataUpdate.error || "Bijwerken mislukt");
+          // Niet meer automatisch redirecten; gebruiker ziet nu duidelijke melding
+          return;
         }
       } else {
         // Create company via API
         const response = await fetch('/api/companies', {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(companyData),
         });
 
+        const data = await response.json().catch(() => ({}));
         if (response.ok) {
-          const newCompany = await response.json();
-          setCompanies(prev => [...prev, newCompany]);
+          setCompanies(prev => [...prev, data]);
           toast.success("Bedrijf toegevoegd!");
-
-          // Update onboarding progress
           localStorage.setItem('onboarding_company_completed', 'true');
         } else {
-          throw new Error('Failed to create company');
+          toast.error(data.error || "Aanmaken mislukt");
+          // Niet meer automatisch redirecten; gebruiker ziet nu duidelijke melding
+          return;
         }
       }
 
@@ -243,29 +278,17 @@ export default function CompaniesPage() {
       resetForm();
     } catch (error) {
       console.error('Error saving company:', error);
-      toast.error("Er is iets misgegaan");
+      toast.error(error instanceof Error ? error.message : "Er is iets misgegaan");
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleFetchFromWebsite = async () => {
-    console.log('handleFetchFromWebsite called');
-    console.log('fetchWebsiteUrl:', fetchWebsiteUrl);
-    console.log('formData.name:', formData.name);
-    console.log('isFetchingFromWeb:', isFetchingFromWeb);
-
     if (!fetchWebsiteUrl.trim()) {
       toast.error("Voer een website URL in");
       return;
     }
-
-    if (!formData.name.trim()) {
-      toast.error("Voer eerst een bedrijfsnaam in");
-      return;
-    }
-
-    console.log('Starting fetch...');
     setIsFetchingFromWeb(true);
     try {
       const response = await fetch('/api/companies/fetch-info', {
@@ -275,13 +298,11 @@ export default function CompaniesPage() {
         },
         body: JSON.stringify({
           website: fetchWebsiteUrl,
-          companyName: formData.name
+          companyName: formData.name || undefined
         }),
       });
 
-      console.log('Response status:', response.status);
       const data = await response.json();
-      console.log('Response data:', data);
 
       if (!response.ok) {
         throw new Error(data.error || 'Er is iets misgegaan');
@@ -290,6 +311,7 @@ export default function CompaniesPage() {
       // Update form with extracted information
       setFormData(prev => ({
         ...prev,
+        name: prev.name || data.company?.name || data.extractedInfo?.name || prev.name,
         description: data.extractedInfo.description || prev.description,
         industry: data.extractedInfo.industry || prev.industry,
         targetAudience: data.extractedInfo.targetAudience || prev.targetAudience,
@@ -298,13 +320,13 @@ export default function CompaniesPage() {
         website: fetchWebsiteUrl
       }));
 
+      syncAudienceState(data.extractedInfo.targetAudience || formData.targetAudience);
+
       toast.success("Bedrijfsinfo succesvol opgehaald van website!");
       setFetchWebsiteUrl(""); // Clear the fetch URL after successful fetch
     } catch (error) {
-      console.error('Fetch error:', error);
       toast.error(error instanceof Error ? error.message : "Kon bedrijfsinfo niet ophalen");
     } finally {
-      console.log('Setting isFetchingFromWeb to false');
       setIsFetchingFromWeb(false);
     }
   };
@@ -351,6 +373,13 @@ export default function CompaniesPage() {
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Bedrijven Beheren</h1>
             <p className="text-gray-600">Beheer je bedrijf profielen voor gepersonaliseerde content</p>
           </div>
+          <Button
+            onClick={openCreateDialog}
+            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Bedrijf toevoegen
+          </Button>
         </div>
 
         {/* Companies Grid */}
@@ -358,32 +387,28 @@ export default function CompaniesPage() {
           <Card>
             <CardContent className="pt-6 text-center py-12">
               <Building className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Geen bedrijven gevonden</h3>
-              <p className="text-gray-600 mb-6">Voeg je eerste bedrijf toe om te beginnen met content maken</p>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Nog geen bedrijven</h3>
+              <p className="text-gray-600 mb-6">
+                Voeg je eerste bedrijf toe en laat AI automatisch de basisinformatie invullen via je website.
+              </p>
 
               <div className="space-y-4 max-w-md mx-auto">
                 <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-4 border border-blue-200/50">
                   <div className="flex items-center gap-3 mb-2">
                     <Globe className="h-5 w-5 text-blue-600" />
-                    <span className="font-medium text-gray-900">Snel beginnen</span>
+                    <span className="font-medium text-gray-900">Bedrijf toevoegen (met AI)</span>
                   </div>
                   <p className="text-sm text-gray-600 mb-3">
-                    Heb je al een website? Laat AI automatisch je bedrijfsinformatie ophalen.
+                    Vul je website in en GenPostAI haalt automatisch naam, beschrijving en andere gegevens op. Je kunt alles daarna handmatig aanpassen.
                   </p>
-                  <Button onClick={openCreateDialog} className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+                  <Button
+                    onClick={openCreateDialog}
+                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                  >
                     <Wand2 className="mr-2 h-4 w-4" />
-                    Start met website importeren
+                    Bedrijf toevoegen
                   </Button>
                 </div>
-
-                <div className="text-center">
-                  <span className="text-gray-500 text-sm">of</span>
-                </div>
-
-                <Button variant="outline" onClick={openCreateDialog} className="w-full">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Handmatig bedrijf toevoegen
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -555,9 +580,8 @@ export default function CompaniesPage() {
                     </div>
                     <Button
                       onClick={handleFetchFromWebsite}
-                      disabled={false} // Temporarily disable for testing
+                      disabled={isFetchingFromWeb || !fetchWebsiteUrl.trim()}
                       className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-                      onMouseEnter={() => console.log('Button hover - disabled:', isFetchingFromWeb || !formData.name.trim(), 'isFetchingFromWeb:', isFetchingFromWeb, 'name:', formData.name)}
                     >
                       {isFetchingFromWeb && <Wand2 className="mr-2 h-4 w-4 animate-spin" />}
                       <Globe className="mr-2 h-4 w-4" />
@@ -565,7 +589,7 @@ export default function CompaniesPage() {
                     </Button>
                   </div>
                   <p className="text-xs text-gray-500 mt-2">
-                    Voer eerst je bedrijfsnaam in voordat je info ophaalt.
+                    Vul je website in; de bedrijfsnaam en overige informatie worden automatisch voorgesteld.
                   </p>
                 </div>
 
@@ -618,15 +642,44 @@ export default function CompaniesPage() {
               </TabsContent>
 
               <TabsContent value="branding" className="space-y-6 mt-6">
-                <div>
-                  <Label htmlFor="targetAudience">Doelgroep</Label>
-                  <Textarea
-                    id="targetAudience"
-                    value={formData.targetAudience}
-                    onChange={(e) => setFormData(prev => ({ ...prev, targetAudience: e.target.value }))}
-                    placeholder="Beschrijf je ideale klant of doelgroep..."
-                    rows={3}
-                  />
+                <div className="space-y-3">
+                  <Label>Doelgroep</Label>
+                  <p className="text-sm text-gray-500">
+                    Kies één of meerdere doelgroepen die je wilt bereiken. Vul &quot;Overig&quot; in voor een specifieke doelgroep.
+                  </p>
+                  <div className="grid md:grid-cols-2 gap-3">
+                    {DOELGROEP_OPTIES.map((optie) => (
+                      <label
+                        key={optie}
+                        className="flex items-start gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer"
+                      >
+                        <Checkbox
+                          checked={selectedAudiences.includes(optie)}
+                          onCheckedChange={(checked) => {
+                            setSelectedAudiences((prev) =>
+                              checked
+                                ? [...prev, optie]
+                                : prev.filter((v) => v !== optie)
+                            );
+                          }}
+                          className="mt-0.5"
+                        />
+                        <span>{optie}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="targetAudienceOther">Overig (vrij veld)</Label>
+                    <Input
+                      id="targetAudienceOther"
+                      value={otherAudience}
+                      onChange={(e) => setOtherAudience(e.target.value)}
+                      placeholder="Bijvoorbeeld: HR-managers in de zorg, SaaS-founders in de Benelux..."
+                    />
+                    <p className="text-xs text-gray-500">
+                      Deze tekst wordt samen met de geselecteerde vakjes opgeslagen als volledige doelgroepbeschrijving.
+                    </p>
+                  </div>
                 </div>
 
                 <div>
@@ -664,26 +717,9 @@ export default function CompaniesPage() {
                     onChange={(e) => setFormData(prev => ({ ...prev, linkedinUrl: e.target.value }))}
                     placeholder="https://linkedin.com/company/jouw-bedrijf"
                   />
-                </div>
-
-                <div>
-                  <Label htmlFor="twitterUrl">Twitter/X URL</Label>
-                  <Input
-                    id="twitterUrl"
-                    value={formData.twitterUrl}
-                    onChange={(e) => setFormData(prev => ({ ...prev, twitterUrl: e.target.value }))}
-                    placeholder="https://twitter.com/jouw_bedrijf"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="facebookUrl">Facebook URL</Label>
-                  <Input
-                    id="facebookUrl"
-                    value={formData.facebookUrl}
-                    onChange={(e) => setFormData(prev => ({ ...prev, facebookUrl: e.target.value }))}
-                    placeholder="https://facebook.com/jouw-bedrijf"
-                  />
+                  <p className="text-sm text-gray-500 mt-1">
+                    Alleen LinkedIn wordt ondersteund voor dit bedrijf
+                  </p>
                 </div>
               </TabsContent>
             </Tabs>

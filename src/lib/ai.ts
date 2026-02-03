@@ -4,7 +4,16 @@ import Groq from 'groq-sdk';
 let openai: OpenAI | null = null;
 let groq: Groq | null = null;
 
-function getOpenAI() {
+// Standaard OpenAI model – kan via env worden overschreven
+const CONTENT_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+
+function getOpenAI(): OpenAI {
+  if (!process.env.OPENAI_API_KEY?.trim()) {
+    throw new Error(
+      "OPENAI_API_KEY is niet geconfigureerd. Voeg OPENAI_API_KEY toe aan je .env bestand. " +
+      "Haal een key op via https://platform.openai.com/api-keys"
+    );
+  }
   if (!openai) {
     openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
@@ -42,15 +51,10 @@ export interface ImageGenerationParams {
 class AIService {
   async generateContent(params: ContentGenerationParams): Promise<string> {
     const prompt = this.buildContentPrompt(params);
-
-    try {
-      // Try OpenAI first, fallback to Groq
-      const response = await this.callAIProvider(prompt);
-      return this.cleanContent(response);
-    } catch (error) {
-      console.error('AI Content generation error:', error);
-      throw new Error('Kon content niet genereren. Probeer het opnieuw.');
-    }
+    // Laat fouten uit de providers doorbubbelen zodat de API-route
+    // een duidelijke foutmelding kan teruggeven (bijv. ontbrekende API key).
+    const response = await this.callAIProvider(prompt);
+    return this.cleanContent(response);
   }
 
   async generateImage(params: ImageGenerationParams): Promise<string> {
@@ -73,9 +77,8 @@ class AIService {
 
   private async callAIProvider(prompt: string): Promise<string> {
     try {
-      // Try OpenAI first
       const completion = await getOpenAI().chat.completions.create({
-        model: "gpt-4",
+        model: CONTENT_MODEL,
         messages: [
           {
             role: "system",
@@ -90,28 +93,27 @@ class AIService {
         temperature: 0.7,
       });
 
-      return completion.choices[0].message.content || '';
+      const text = completion.choices[0]?.message?.content?.trim();
+      if (!text) {
+        throw new Error("Geen content ontvangen van het AI-model.");
+      }
+      return text;
     } catch (openaiError) {
-      console.log('OpenAI failed, trying Groq...');
-
-      // Fallback to Groq
-      const completion = await getGroq().chat.completions.create({
-        model: "llama3-8b-8192",
-        messages: [
-          {
-            role: "system",
-            content: "Je bent een professionele content creator gespecialiseerd in LinkedIn content voor Nederlandse bedrijven. Schrijf altijd in het Nederlands."
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        max_tokens: 1000,
-        temperature: 0.7,
-      });
-
-      return completion.choices[0].message.content || '';
+      console.error("OpenAI (GPT-5.2) content generation failed:", openaiError);
+      if (process.env.GROQ_API_KEY) {
+        console.log("Fallback naar Groq...");
+        const completion = await getGroq().chat.completions.create({
+          model: "llama3-8b-8192",
+          messages: [
+            { role: "system", content: "Je bent een professionele content creator gespecialiseerd in LinkedIn content voor Nederlandse bedrijven. Schrijf altijd in het Nederlands." },
+            { role: "user", content: prompt }
+          ],
+          max_tokens: 1000,
+          temperature: 0.7,
+        });
+        return completion.choices[0].message.content || "";
+      }
+      throw openaiError;
     }
   }
 

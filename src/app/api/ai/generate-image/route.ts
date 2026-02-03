@@ -52,14 +52,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check user credits (images cost 2 credits)
+    const isAdmin = user.role === "ADMIN";
+
+    // Check user credits (images cost 2 credits, admins onbeperkt)
     const userWithCredits = await prisma.user.findUnique({
       where: { id: user.id },
       include: {
         credits: {
-          where: { organizationId: null },
-          orderBy: { createdAt: 'desc' },
-          take: 1
+          select: { amount: true }
         }
       }
     });
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
 
     const availableCredits = userWithCredits.credits.reduce((total, credit) => total + credit.amount, 0);
 
-    if (availableCredits < 2) {
+    if (!isAdmin && availableCredits < 2) {
       return NextResponse.json(
         { error: "Onvoldoende credits voor image generatie (2 credits nodig)" },
         { status: 402 }
@@ -110,20 +110,22 @@ export async function POST(request: NextRequest) {
 
     const imageUrl = await aiService.generateImage(imageParams);
 
-    // Deduct credits (2 for images)
-    await prisma.credit.create({
-      data: {
-        userId: user.id,
-        amount: -2,
-        type: 'PURCHASE',
-        description: `Afbeelding generatie: ${style}`,
-      }
-    });
+    if (!isAdmin) {
+      // Deduct credits (2 for images)
+      await prisma.credit.create({
+        data: {
+          userId: user.id,
+          amount: -2,
+          type: 'PURCHASE',
+          description: `Afbeelding generatie: ${style}`,
+        }
+      });
+    }
 
     return NextResponse.json({
       imageUrl,
-      creditsUsed: 2,
-      remainingCredits: availableCredits - 2
+      creditsUsed: isAdmin ? 0 : 2,
+      remainingCredits: isAdmin ? availableCredits : availableCredits - 2
     });
 
   } catch (error) {

@@ -67,13 +67,30 @@ export default function CalendarPage() {
       return;
     }
 
-    // TODO: Fetch scheduled posts from API
-    // For new users, show empty calendar
-    const mockPosts: ScheduledPost[] = [
-      // Empty for new users - they need to create their first posts
-    ];
+    async function fetchScheduledPosts() {
+      try {
+        const response = await fetch("/api/calendar/posts", { credentials: "include" });
+        const data = await response.json();
+        if (response.ok && data.posts && Array.isArray(data.posts)) {
+          setScheduledPosts(
+            data.posts.map((p: { id: string; title: string; content: string; scheduledAt: string; status: string; company?: { id: string; name: string } }) => ({
+              id: p.id,
+              title: p.title,
+              content: p.content,
+              scheduledAt: p.scheduledAt,
+              status: p.status,
+              company: p.company ? { id: p.company.id, name: p.company.name } : { id: "", name: "—" },
+            }))
+          );
+        } else {
+          setScheduledPosts([]);
+        }
+      } catch {
+        setScheduledPosts([]);
+      }
+    }
 
-    setScheduledPosts(mockPosts);
+    fetchScheduledPosts();
   }, [session, status, router]);
 
   const getDaysInMonth = (date: Date) => {
@@ -104,8 +121,9 @@ export default function CalendarPage() {
     for (let day = 1; day <= daysInMonth; day++) {
       const dayDate = new Date(year, month, day);
       const dayPosts = scheduledPosts.filter(post => {
+        if (!post.scheduledAt) return false;
         const postDate = new Date(post.scheduledAt);
-        return postDate.toDateString() === dayDate.toDateString();
+        return !isNaN(postDate.getTime()) && postDate.toDateString() === dayDate.toDateString();
       });
 
       days.push({

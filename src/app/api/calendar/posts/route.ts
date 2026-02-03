@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions, getUserFromSession } from "@/lib/auth";
+import { getAuthUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    const user = await getUserFromSession(session);
+    const user = await getAuthUser();
 
     if (!user) {
       return NextResponse.json(
@@ -64,13 +62,13 @@ export async function GET(request: NextRequest) {
       where: whereClause,
       include: {
         company: {
-          select: { name: true, logo: true }
+          select: { id: true, name: true, logo: true }
         },
         template: {
           select: { name: true }
         }
       },
-      orderBy: { scheduledAt: 'asc' }
+      orderBy: { createdAt: "desc" }
     });
 
     return NextResponse.json({ posts });
@@ -86,8 +84,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    const user = await getUserFromSession(session);
+    const user = await getAuthUser();
 
     if (!user) {
       return NextResponse.json(
@@ -96,93 +93,143 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const {
-      title,
-      content,
-      scheduledAt,
-      companyId,
-      templateId,
-      organizationId,
-      strategy,
-      tone,
-      imageStyle
-    } = await request.json();
-
-    if (!title || !content || !scheduledAt) {
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
       return NextResponse.json(
-        { error: "Titel, content en geplande datum zijn verplicht" },
+        { error: "Ongeldige request body" },
         { status: 400 }
       );
     }
 
-    // Check organization access if provided
-    if (organizationId) {
-      const userOrg = await prisma.userOrganization.findFirst({
-        where: {
-          userId: user.id,
-          organizationId
-        }
-      });
+    const {
+      title,
+      content,
+      scheduledAt,
+      companyId: rawCompanyId,
+      templateId: rawTemplateId,
+      organizationId: rawOrganizationId,
+      strategy,
+      tone,
+      imageStyle: rawImageStyle,
+      publishNow
+    } = body;
 
+    const companyId = rawCompanyId && String(rawCompanyId).trim() ? String(rawCompanyId).trim() : null;
+    const templateId = rawTemplateId && String(rawTemplateId).trim() ? String(rawTemplateId).trim() : null;
+    const organizationId = rawOrganizationId && String(rawOrganizationId).trim() ? String(rawOrganizationId).trim() : null;
+    const imageStyle = rawImageStyle && String(rawImageStyle).trim() ? String(rawImageStyle).trim() : null;
+
+    const titleStr = title != null ? String(title).trim() : "";
+    const contentStr = content != null ? String(content).trim() : "";
+    if (!titleStr || !contentStr) {
+      return NextResponse.json(
+        { error: "Titel en content zijn verplicht" },
+        { status: 400 }
+      );
+    }
+
+    const isPublishNow = !!publishNow;
+    const isScheduled = !!scheduledAt && !isPublishNow;
+    if (!isPublishNow && !isScheduled) {
+      // Geen planning en geen direct publiceren = concept
+    }
+    if (isScheduled && !scheduledAt) {
+      return NextResponse.json(
+        { error: "Geplande datum is verplicht bij inplannen" },
+        { status: 400 }
+      );
+    }
+
+    // Organisatie: uit request of van de gebruiker; zo nodig automatisch aanmaken (zoals bij Bedrijven)
+    let resolvedOrganizationId: string | null = organizationId;
+    if (!resolvedOrganizationId) {
+      let userOrg = await prisma.userOrganization.findFirst({
+        where: { userId: user.id },
+        select: { organizationId: true }
+      });
+      if (!userOrg) {
+        const orgName = user.name || (user.email ?? "user").split("@")[0];
+        const organization = await prisma.organization.create({
+          data: {
+            name: `${orgName}'s Organisatie`,
+            slug: `org-${user.id.slice(0, 8)}-${Date.now()}`,
+          },
+        });
+        await prisma.userOrganization.create({
+          data: {
+            userId: user.id,
+            organizationId: organization.id,
+            role: "OWNER",
+          },
+        });
+        resolvedOrganizationId = organization.id;
+      } else {
+        resolvedOrganizationId = userOrg.organizationId;
+      }
+    } else {
+      if (!organizationId) {
+        return NextResponse.json(
+          { error: "Ongeldige organisatie" },
+          { status: 400 }
+        );
+      }
+      const userOrg = await prisma.userOrganization.findFirst({
+        where: { userId: user.id, organizationId }
+      });
       if (!userOrg) {
         return NextResponse.json(
           { error: "Geen toegang tot deze organisatie" },
           { status: 403 }
         );
       }
+      resolvedOrganizationId = organizationId;
     }
 
-    // Check company access if provided
-    if (companyId) {
+    // Bedrijf optioneel: alleen gebruiken als het bij de organisatie van de gebruiker hoort
+    let finalCompanyId: string | null = null;
+    if (companyId && resolvedOrganizationId) {
       const company = await prisma.company.findFirst({
         where: {
           id: companyId,
-          organizationId: organizationId || null,
-          organization: organizationId ? {
-            users: {
-              some: {
-                userId: user.id
-              }
-            }
-          } : undefined
+          organizationId: resolvedOrganizationId
         }
       });
-
-      if (!company && !organizationId) {
-        // If no organization context, check personal access
-        const personalCompany = await prisma.company.findFirst({
-          where: {
-            id: companyId,
-            organizationId: undefined // Personal companies
-          }
-        });
-
-        if (!personalCompany) {
-          return NextResponse.json(
-            { error: "Bedrijf niet gevonden of geen toegang" },
-            { status: 404 }
-          );
-        }
-      }
+      if (company) finalCompanyId = company.id;
     }
+
+    const now = new Date();
+    const parseDate = (val: unknown): Date | null => {
+      if (!val) return null;
+      const d = new Date(val as string);
+      return isNaN(d.getTime()) ? null : d;
+    };
+    const scheduledAtDate = isPublishNow
+      ? (parseDate(scheduledAt) || now)
+      : isScheduled
+      ? (parseDate(scheduledAt) || now)
+      : null;
+    const publishedAtDate = isPublishNow ? (scheduledAtDate || now) : null;
 
     const post = await prisma.post.create({
       data: {
         userId: user.id,
-        organizationId: organizationId || null,
-        companyId: companyId || null,
+        organizationId: resolvedOrganizationId,
+        companyId: finalCompanyId ?? null,
         templateId: templateId || null,
-        title,
-        content,
+        title: titleStr,
+        content: contentStr,
         strategy: strategy || 'STANDARD_POST',
         tone: tone || 'PROFESSIONAL',
         imageStyle: imageStyle || null,
-        status: 'SCHEDULED',
-        scheduledAt: new Date(scheduledAt)
+        status: isPublishNow ? 'PUBLISHED' : isScheduled ? 'SCHEDULED' : 'DRAFT',
+        scheduledAt: scheduledAtDate,
+        publishedAt: publishedAtDate
       },
       include: {
         company: {
-          select: { name: true, logo: true }
+          select: { id: true, name: true, logo: true }
         },
         template: {
           select: { name: true }
@@ -194,8 +241,15 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error("Calendar post creation error:", error);
+    const message = error instanceof Error ? error.message : "Onbekende fout";
+    const isPrisma = message.includes("Prisma") || message.includes("Unique constraint") || message.includes("Foreign key");
     return NextResponse.json(
-      { error: "Er is iets misgegaan bij het plannen van de post" },
+      {
+        error: isPrisma
+          ? "Kon post niet opslaan. Controleer of je bent gekoppeld aan een organisatie (bijv. via Bedrijven)."
+          : "Er is iets misgegaan bij het opslaan of plannen van de post.",
+        details: process.env.NODE_ENV === "development" ? message : undefined
+      },
       { status: 500 }
     );
   }

@@ -1,31 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
-import { authOptions } from '@/lib/auth';
+import { getAuthUser } from '@/lib/auth';
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
+    const { id: companyId } = await params;
+    const user = await getAuthUser();
 
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Je bent niet ingelogd of je sessie is verlopen. Log opnieuw in om door te gaan.' },
+        { status: 401 }
+      );
     }
 
     // Get user's organization
     const userOrganization = await prisma.userOrganization.findFirst({
-      where: { userId: session.user.id },
+      where: { userId: user.id },
       include: { organization: true }
     });
 
     if (!userOrganization) {
-      return NextResponse.json({ error: 'User not in an organization' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Je hebt nog geen organisatie. Herlaad de pagina of log opnieuw in.' },
+        { status: 404 }
+      );
     }
 
     const body = await request.json();
-    const companyId = params.id;
 
     // Check if company exists and belongs to user's organization
     const existingCompany = await prisma.company.findFirst({
@@ -75,9 +80,7 @@ export async function PUT(
       brandVoice: null,
       keyTopics: [],
       socialLinks: {
-        linkedin: company.linkedinUrl,
-        twitter: null,
-        facebook: null
+        linkedin: company.linkedinUrl
       },
       createdAt: company.createdAt.toISOString(),
       updatedAt: company.updatedAt.toISOString(),
@@ -97,26 +100,31 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
+    const { id: companyId } = await params;
+    const user = await getAuthUser();
 
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Je bent niet ingelogd of je sessie is verlopen. Log opnieuw in om door te gaan.' },
+        { status: 401 }
+      );
     }
 
     // Get user's organization
     const userOrganization = await prisma.userOrganization.findFirst({
-      where: { userId: session.user.id },
+      where: { userId: user.id },
       include: { organization: true }
     });
 
     if (!userOrganization) {
-      return NextResponse.json({ error: 'User not in an organization' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Je hebt nog geen organisatie. Herlaad de pagina of log opnieuw in.' },
+        { status: 404 }
+      );
     }
-
-    const companyId = params.id;
 
     // Check if company exists and belongs to user's organization
     const existingCompany = await prisma.company.findFirst({

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   MessageSquare,
   CheckCircle,
@@ -13,7 +14,8 @@ import {
   TrendingUp,
   Plus,
   BarChart3,
-  Building
+  Building,
+  Shield
 } from "lucide-react";
 import Link from "next/link";
 import WorkflowHeader from "@/components/WorkflowHeader";
@@ -22,6 +24,9 @@ export default function Dashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [dashboardParticles, setDashboardParticles] = useState<Array<{left: string, top: string, delay: string, duration: string}>>([]);
+  const [displayName, setDisplayName] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState("");
+  const [isSavingName, setIsSavingName] = useState(false);
 
   // Generate particles only on client-side to prevent hydration mismatch
   useEffect(() => {
@@ -33,6 +38,40 @@ export default function Dashboard() {
     }));
     setDashboardParticles(particleArray);
   }, []);
+
+  useEffect(() => {
+    if (status === "loading" || !session) return;
+
+    const currentName = session.user?.name ?? null;
+    setDisplayName(currentName);
+    setNameDraft(currentName ?? "");
+  }, [session, status]);
+
+  const handleSaveName = async () => {
+    const trimmed = nameDraft.trim();
+    if (!trimmed) return;
+
+    setIsSavingName(true);
+    try {
+      const response = await fetch("/api/user/profile", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ name: trimmed })
+      });
+
+      if (response.ok) {
+        setDisplayName(trimmed);
+      } else {
+        console.error("Naam opslaan mislukt");
+      }
+    } catch (error) {
+      console.error("Fout bij opslaan van naam:", error);
+    } finally {
+      setIsSavingName(false);
+    }
+  };
 
   useEffect(() => {
     if (status === "loading") return;
@@ -82,12 +121,41 @@ export default function Dashboard() {
       <div className="container mx-auto px-4 py-8 relative z-10">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Welkom terug, {session?.user?.name || "Gebruiker"}!
+            Welkom terug, {displayName || session?.user?.name || "Gebruiker"}!
           </h1>
           <p className="text-gray-600">
             Hier is een overzicht van je LinkedIn content activiteit
           </p>
         </div>
+
+        {/* Naam instellen voor persoonlijke begroeting */}
+        {!displayName && !session?.user?.name && (
+          <div className="mb-8 max-w-md">
+            <Card className="bg-white/80 backdrop-blur-sm border border-blue-200/70 shadow-md">
+              <CardHeader>
+                <CardTitle className="text-base">Hoe mogen we je noemen?</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-600 mb-3">
+                  Vul je naam in zodat we je overal in GenPostAI persoonlijk kunnen begroeten.
+                </p>
+                <div className="flex gap-3">
+                  <Input
+                    placeholder="Bijvoorbeeld: Jan"
+                    value={nameDraft}
+                    onChange={(e) => setNameDraft(e.target.value)}
+                  />
+                  <Button
+                    onClick={handleSaveName}
+                    disabled={isSavingName || !nameDraft.trim()}
+                  >
+                    {isSavingName ? "Opslaan..." : "Opslaan"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg hover:shadow-xl transition-all duration-500 hover:-translate-y-2 overflow-hidden">
@@ -215,6 +283,28 @@ export default function Dashboard() {
                 </div>
               </CardContent>
             </Card>
+
+            {(session?.user as { isBigBrother?: boolean })?.isBigBrother && (
+              <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-xl hover:shadow-2xl transition-all duration-500 overflow-hidden border-amber-200">
+                <div className="bg-gradient-to-r from-amber-600 to-amber-700 p-6 text-white">
+                  <CardHeader className="p-0">
+                    <CardTitle className="text-white flex items-center gap-2">
+                      <Shield className="h-5 w-5" />
+                      Big Brother
+                    </CardTitle>
+                  </CardHeader>
+                </div>
+                <CardContent className="pt-4">
+                  <p className="text-gray-600 text-sm mb-3">Inzichten over gebruikers, rollen, credits en gebruik.</p>
+                  <Link href="/dashboard/admin">
+                    <Button variant="outline" className="w-full" size="sm">
+                      <Shield className="mr-2 h-4 w-4" />
+                      Naar Big Brother
+                    </Button>
+                  </Link>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </div>

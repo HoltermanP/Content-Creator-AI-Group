@@ -76,7 +76,7 @@ export default function NewPostPage() {
     scheduledDate: "",
     scheduledTime: "",
     imageUrl: "",
-    linkedInMethod: "DIRECT_API"
+    linkedInMethod: "COPY_PASTE"
   });
 
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -85,47 +85,54 @@ export default function NewPostPage() {
   const [generatedContent, setGeneratedContent] = useState("");
 
   useEffect(() => {
+    if (currentStep === 5 && (!formData.scheduledDate || !formData.scheduledTime)) {
+      const now = new Date();
+      const date = now.toISOString().slice(0, 10);
+      const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      setFormData(prev => ({
+        ...prev,
+        scheduledDate: prev.scheduledDate || date,
+        scheduledTime: prev.scheduledTime || time,
+      }));
+    }
+  }, [currentStep]);
+
+  useEffect(() => {
     if (status === "loading") return;
     if (!session) {
       router.push("/auth/signin");
       return;
     }
 
-    // TODO: Fetch companies and templates from API
-    const mockCompanies: Company[] = [
-      { id: "1", name: "TechCorp Netherlands", industry: "Technology/SaaS", description: "AI-powered analytics platform" },
-      { id: "2", name: "De Vries Consultancy", industry: "Consulting", description: "Management consulting services" }
-    ];
-
-    const mockTemplates: Template[] = [
-      {
-        id: "1",
-        name: "Nieuws Update",
-        description: "Nieuws en updates delen",
-        category: "Nieuws",
-        content: "🚀 [Nieuws]\n\n[Details over de update]\n\nWat vind jij hiervan?\n\n#Innovation #Business",
-        variables: ["Nieuws", "Details over de update"]
-      },
-      {
-        id: "2",
-        name: "Thought Leadership",
-        description: "Expertise en inzichten delen",
-        category: "Expertise",
-        content: "💡 [Onderwerp]: [Inzicht]\n\n[Verdere uitleg]\n\nWat is jouw ervaring hiermee?\n\n#ThoughtLeadership #Expertise",
-        variables: ["Onderwerp", "Inzicht", "Verdere uitleg"]
-      },
-      {
-        id: "3",
-        name: "Customer Story",
-        description: "Klantverhalen delen",
-        category: "Social Proof",
-        content: "🎯 [Bedrijfsnaam] heeft geweldige resultaten behaald!\n\n[Uitleg over het succes]\n\n[Quote van klant]\n\n#SuccessStory #Growth",
-        variables: ["Bedrijfsnaam", "Uitleg over het succes", "Quote van klant"]
+    async function loadData() {
+      try {
+        const [companiesRes, templatesRes] = await Promise.all([
+          fetch("/api/companies"),
+          fetch("/api/templates"),
+        ]);
+        if (companiesRes.ok) {
+          const data = await companiesRes.json();
+          setCompanies(Array.isArray(data) ? data : data.companies ?? []);
+        }
+        if (templatesRes.ok) {
+          const data = await templatesRes.json();
+          setTemplates(Array.isArray(data) ? data : data.templates ?? []);
+        }
+      } catch {
+        // Fallback mock data als API faalt (geen org of netwerk)
+        setCompanies([
+          { id: "1", name: "TechCorp Netherlands", industry: "Technology/SaaS", description: "AI-powered analytics platform" },
+          { id: "2", name: "De Vries Consultancy", industry: "Consulting", description: "Management consulting services" },
+        ]);
+        setTemplates([
+          { id: "1", name: "Nieuws Update", description: "Nieuws en updates delen", category: "Nieuws", content: "🚀 [Nieuws]\n\n[Details]\n\n#Innovation #Business", variables: ["Nieuws", "Details"] },
+          { id: "2", name: "Thought Leadership", description: "Expertise delen", category: "Expertise", content: "💡 [Onderwerp]: [Inzicht]\n\n#ThoughtLeadership", variables: ["Onderwerp", "Inzicht"] },
+          { id: "3", name: "Customer Story", description: "Klantverhalen", category: "Social Proof", content: "🎯 [Bedrijf] heeft resultaten behaald!\n\n#SuccessStory", variables: ["Bedrijf"] },
+          { id: "4", name: "Vacature", description: "Deel een vacature en trek kandidaten aan", category: "Vacature", content: "💼 **We zoeken: [Functietitel]**\n\n[Bedrijf] zoekt een [Functietitel].\n\n#Vacature #Hiring", variables: ["Functietitel", "Bedrijf"] },
+        ]);
       }
-    ];
-
-    setCompanies(mockCompanies);
-    setTemplates(mockTemplates);
+    }
+    loadData();
   }, [session, status, router]);
 
   const steps = [
@@ -137,80 +144,194 @@ export default function NewPostPage() {
   ];
 
   const generateContent = async () => {
+    if (!formData.companyId || !formData.topic || !formData.tone) {
+      toast.error("Vul bedrijf, onderwerp en toon in.");
+      return;
+    }
     setIsGenerating(true);
     try {
-      // Simulate AI generation
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      const content = `🚀 ${formData.topic}
-
-Na maanden van intensieve ontwikkeling zijn we enorm trots op wat we hebben gebouwd. ${formData.topic} gaat onze manier van werken volledig veranderen.
-
-De eerste gebruikers melden al: 'Dit verandert hoe we werken!'
-
-${formData.callToAction || "Wat vind jij van deze ontwikkeling?"}
-
-#AI #Innovation #Business #${companies.find(c => c.id === formData.companyId)?.name?.replace(/\s+/g, "") || "Company"}`;
-
+      const res = await fetch("/api/ai/generate-content", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId: formData.companyId,
+          topic: formData.topic,
+          strategy: formData.strategy || "STANDARD_POST",
+          tone: formData.tone,
+          targetAudience: formData.targetAudience || "Professionele LinkedIn gebruikers",
+          callToAction: formData.callToAction || undefined,
+          hashtags: formData.hashtags ? formData.hashtags.split(/\s+/).filter(Boolean) : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Genereren mislukt");
+        return;
+      }
+      const content = data.content ?? "";
       setGeneratedContent(content);
       setFormData(prev => ({ ...prev, content }));
       setCurrentStep(4);
-      toast.success("Content succesvol gegenereerd!");
+      toast.success("Content succesvol gegenereerd met GPT-5.2!");
     } catch (error) {
-      toast.error("Er is iets misgegaan bij het genereren van content");
+      console.error("Generate content error:", error);
+      toast.error("Er is iets misgegaan bij het genereren van content. Controleer of OPENAI_API_KEY in .env staat.");
     } finally {
       setIsGenerating(false);
     }
   };
 
   const saveAsDraft = async () => {
+    const title = formData.title?.trim() || formData.topic?.trim() || formData.content?.trim().split("\n")[0]?.slice(0, 80) || "Nieuwe post";
+    const content = formData.content?.trim();
+    if (!content) {
+      toast.error("Vul eerst de content in (stap 4).");
+      return;
+    }
+
     setIsSaving(true);
     try {
-      // TODO: Save to API
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const response = await fetch("/api/calendar/posts", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          content: content + (formData.hashtags ? "\n\n" + formData.hashtags.trim() : ""),
+          companyId: formData.companyId || null,
+          strategy: formData.strategy || "STANDARD_POST",
+          tone: formData.tone || "PROFESSIONAL",
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(data.error || "Er is iets misgegaan bij het opslaan");
+        return;
+      }
+
       toast.success("Post opgeslagen als concept!");
       router.push("/dashboard/posts");
     } catch (error) {
-      toast.error("Er is iets misgegaan bij het opslaan");
+      toast.error("Er is iets misgegaan bij het opslaan. Controleer je internetverbinding.");
     } finally {
       setIsSaving(false);
     }
   };
 
   const schedulePost = async () => {
+    const title = formData.title?.trim() || formData.topic?.trim() || formData.content?.trim().split("\n")[0]?.slice(0, 80) || "Nieuwe post";
+    const content = formData.content?.trim();
+    if (!content) {
+      toast.error("Vul eerst de content in (stap 4).");
+      return;
+    }
+    const date = formData.scheduledDate?.trim() || new Date().toISOString().slice(0, 10);
+    const time = formData.scheduledTime?.trim() || "12:00";
+    const scheduledAt = `${date}T${time}:00`;
+
     setIsSaving(true);
     try {
-      // TODO: Schedule post via API
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      toast.success("Post succesvol gepland!");
-      router.push("/dashboard/posts");
+      const response = await fetch("/api/calendar/posts", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          content: content + (formData.hashtags ? "\n\n" + formData.hashtags.trim() : ""),
+          scheduledAt,
+          companyId: formData.companyId?.trim() || null,
+          strategy: formData.strategy || "STANDARD_POST",
+          tone: formData.tone || "PROFESSIONAL",
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(data.error || "Er is iets misgegaan bij het plannen");
+        return;
+      }
+
+      const scheduledDate = new Date(scheduledAt);
+      const dateStr = scheduledDate.toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+      const timeStr = scheduledDate.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
+      toast.success(`Post gepland voor ${dateStr} om ${timeStr}. Bekijk je planning op de kalender.`);
+      router.push("/dashboard/calendar");
     } catch (error) {
-      toast.error("Er is iets misgegaan bij het plannen");
+      console.error("Schedule post error:", error);
+      toast.error("Er is iets misgegaan bij het plannen. Probeer het opnieuw.");
     } finally {
       setIsSaving(false);
     }
   };
 
   const publishNow = async () => {
+    const title = formData.title?.trim() || formData.topic?.trim() || formData.content?.trim().split("\n")[0]?.slice(0, 80) || "Nieuwe post";
+    const content = formData.content?.trim();
+    if (!content) {
+      toast.error("Vul eerst de content in (stap 4).");
+      return;
+    }
+
+    const date = formData.scheduledDate?.trim() || new Date().toISOString().slice(0, 10);
+    const time = formData.scheduledTime?.trim() || "12:00";
+    const scheduledAt = `${date}T${time}:00`;
+
     setIsSaving(true);
     try {
-      // TODO: Publish immediately via API
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      toast.success("Post succesvol gepubliceerd!");
+      const createRes = await fetch("/api/calendar/posts", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          content: content + (formData.hashtags ? "\n\n" + formData.hashtags.trim() : ""),
+          companyId: formData.companyId || null,
+          strategy: formData.strategy || "STANDARD_POST",
+          tone: formData.tone || "PROFESSIONAL",
+          publishNow: true,
+          scheduledAt,
+        }),
+      });
+
+      const createData = await createRes.json().catch(() => ({}));
+      if (!createRes.ok) {
+        toast.error(createData.error || "Post kon niet worden gepubliceerd.");
+        return;
+      }
+
+      toast.success("Post is gepubliceerd en staat in je overzicht en planning.");
       router.push("/dashboard/posts");
     } catch (error) {
+      console.error("Publish error:", error);
       toast.error("Er is iets misgegaan bij het publiceren");
     } finally {
       setIsSaving(false);
     }
   };
 
+  const categoryToStrategy: Record<string, string> = {
+    nieuws: "nieuws_update",
+    expertise: "thought_leadership",
+    "social proof": "customer_story",
+    educatief: "educational",
+    vacature: "STANDARD_POST",
+    aankondiging: "nieuws_update",
+    celebration: "STANDARD_POST",
+    engagement: "question_thread",
+    "behind the scenes": "STANDARD_POST",
+    trends: "trend_update",
+    "case study": "customer_story",
+  };
+
   const applyTemplate = (template: Template) => {
     setSelectedTemplate(template);
+    const key = template.category.toLowerCase().trim();
+    const strategy = categoryToStrategy[key] || key.replace(/\s+/g, "_") || "STANDARD_POST";
     setFormData(prev => ({
       ...prev,
       content: template.content,
-      strategy: template.category.toLowerCase().replace(/\s+/g, '_')
+      strategy,
     }));
     toast.success(`Template "${template.name}" toegepast!`);
   };
@@ -231,7 +352,7 @@ ${formData.callToAction || "Wat vind jij van deze ontwikkeling?"}
       <WorkflowHeader currentPage="post" showBackButton backHref="/dashboard/posts" />
 
       <div className="container mx-auto px-4 py-8">
-        {/* Progress Steps */}
+        {/* Progress Steps – één kolom per stap zodat cirkel en label uitlijnen */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <Link href="/dashboard/posts">
@@ -245,39 +366,55 @@ ${formData.callToAction || "Wat vind jij van deze ontwikkeling?"}
             </div>
           </div>
 
-          <div className="flex items-center space-x-2 mb-2">
+          <div className="flex w-full">
             {steps.map((step, index) => (
-              <div key={step.id} className="flex items-center">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                  currentStep >= step.id
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-600'
-                }`}>
-                  {step.id}
+              <div key={step.id} className="flex-1 flex flex-col items-center min-w-0">
+                {/* Cirkel + halve lijnen links/rechts */}
+                <div className="relative w-full flex justify-center" style={{ height: "2rem" }}>
+                  {index > 0 && (
+                    <div
+                      className={`absolute left-0 top-1/2 h-0.5 w-1/2 -translate-y-1/2 ${
+                        currentStep > steps[index - 1].id ? "bg-blue-600" : "bg-gray-200"
+                      }`}
+                      aria-hidden
+                    />
+                  )}
+                  <div
+                    className={`relative z-10 w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-sm font-medium ${
+                      currentStep >= step.id
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-200 text-gray-600"
+                    }`}
+                  >
+                    {step.id}
+                  </div>
+                  {index < steps.length - 1 && (
+                    <div
+                      className={`absolute left-1/2 top-1/2 h-0.5 w-1/2 -translate-y-1/2 ${
+                        currentStep > step.id ? "bg-blue-600" : "bg-gray-200"
+                      }`}
+                      aria-hidden
+                    />
+                  )}
                 </div>
-                {index < steps.length - 1 && (
-                  <div className={`w-12 h-0.5 ${
-                    currentStep > step.id ? 'bg-blue-600' : 'bg-gray-200'
-                  }`} />
-                )}
+                {/* Label direct onder de cirkel */}
+                <div className="mt-2 text-center px-0.5 min-w-0 w-full">
+                  <div
+                    className={`text-sm font-medium truncate ${
+                      currentStep >= step.id ? "text-blue-600" : "text-gray-600"
+                    }`}
+                    title={step.name}
+                  >
+                    {step.name}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-0.5 truncate" title={step.description}>
+                    {step.description}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
-
-          <div className="flex items-center justify-between">
-            {steps.map((step) => (
-              <div key={step.id} className="flex-1 text-center">
-                <div className={`text-sm font-medium ${
-                  currentStep >= step.id ? 'text-blue-600' : 'text-gray-600'
-                }`}>
-                  {step.name}
-                </div>
-                <div className="text-xs text-gray-500 mt-1">
-                  {step.description}
-                </div>
-              </div>
-            ))}
-          </div>
+          {/* Verbindingslijnen tussen cirkels (boven de cirkels, onder de “Stap x van y”-rij) */}
         </div>
 
         {/* Step Content */}
@@ -359,32 +496,63 @@ ${formData.callToAction || "Wat vind jij van deze ontwikkeling?"}
             >
               <Card>
                 <CardHeader>
-                  <CardTitle>Stap 2: Strategie & Tone</CardTitle>
+                  <CardTitle>Stap 2: Template & strategie</CardTitle>
                   <CardDescription>
-                    Bepaal de content strategie en toon van je post
+                    Kies één template; daarmee kies je ook je contentstrategie. Of start leeg en laat de AI bepalen.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                  <div>
+                    <Label className="text-sm font-medium flex items-center gap-2 mb-2">
+                      <Lightbulb className="h-4 w-4" />
+                      Template en strategie
+                    </Label>
+                    <p className="text-xs text-gray-500 mb-3">
+                      Elke template heeft een vaste strategie. Kies er één of kies "Start leeg" voor een vrije AI-post.
+                    </p>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedTemplate(null);
+                          setFormData(prev => ({
+                            ...prev,
+                            strategy: "STANDARD_POST",
+                            content: prev.content || "",
+                          }));
+                        }}
+                        className={`text-left p-3 rounded-lg border transition-colors hover:shadow-sm ${
+                          !selectedTemplate
+                            ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500"
+                            : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"
+                        }`}
+                      >
+                        <h4 className="font-medium text-sm">Start leeg</h4>
+                        <p className="text-xs text-gray-600 mt-1">Geen template; AI kiest strategie op basis van je onderwerp.</p>
+                        <Badge variant="secondary" className="mt-2 text-xs">Vrij</Badge>
+                      </button>
+                      {templates.map((template) => (
+                        <button
+                          key={template.id}
+                          type="button"
+                          onClick={() => applyTemplate(template)}
+                          className={`text-left p-3 rounded-lg border transition-colors hover:shadow-sm ${
+                            selectedTemplate?.id === template.id
+                              ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500"
+                              : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          <h4 className="font-medium text-sm">{template.name}</h4>
+                          <p className="text-xs text-gray-600 mt-1 line-clamp-2">{template.description}</p>
+                          <Badge variant="secondary" className="mt-2 text-xs">{template.category}</Badge>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="grid md:grid-cols-2 gap-6">
                     <div>
-                      <Label htmlFor="strategy">Content strategie</Label>
-                      <Select value={formData.strategy} onValueChange={(value) => setFormData(prev => ({ ...prev, strategy: value }))}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Kies een strategie" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="nieuws_update">Nieuws Update</SelectItem>
-                          <SelectItem value="thought_leadership">Thought Leadership</SelectItem>
-                          <SelectItem value="customer_story">Customer Story</SelectItem>
-                          <SelectItem value="trend_update">Trend Update</SelectItem>
-                          <SelectItem value="question_thread">Question Thread</SelectItem>
-                          <SelectItem value="educational">Educatief</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div>
-                      <Label htmlFor="tone">Tone/Stijl</Label>
+                      <Label htmlFor="tone">Tone / stijl</Label>
                       <Select value={formData.tone} onValueChange={(value) => setFormData(prev => ({ ...prev, tone: value }))}>
                         <SelectTrigger>
                           <SelectValue placeholder="Kies een toon" />
@@ -398,16 +566,15 @@ ${formData.callToAction || "Wat vind jij van deze ontwikkeling?"}
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="targetAudience">Doelgroep (optioneel)</Label>
-                    <Input
-                      id="targetAudience"
-                      placeholder="Bv. IT managers, startups, ondernemers..."
-                      value={formData.targetAudience}
-                      onChange={(e) => setFormData(prev => ({ ...prev, targetAudience: e.target.value }))}
-                    />
+                    <div>
+                      <Label htmlFor="targetAudience">Doelgroep (optioneel)</Label>
+                      <Input
+                        id="targetAudience"
+                        placeholder="Bv. IT managers, startups..."
+                        value={formData.targetAudience}
+                        onChange={(e) => setFormData(prev => ({ ...prev, targetAudience: e.target.value }))}
+                      />
+                    </div>
                   </div>
 
                   <div className="flex gap-4">
@@ -417,36 +584,6 @@ ${formData.callToAction || "Wat vind jij van deze ontwikkeling?"}
                     <Button onClick={() => setCurrentStep(3)} className="flex-1">
                       Volgende stap
                     </Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Templates Section */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Lightbulb className="h-5 w-5" />
-                    Templates
-                  </CardTitle>
-                  <CardDescription>
-                    Gebruik een template als startpunt voor je content
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {templates.map((template) => (
-                      <Card
-                        key={template.id}
-                        className="cursor-pointer hover:shadow-md transition-shadow"
-                        onClick={() => applyTemplate(template)}
-                      >
-                        <CardContent className="pt-4">
-                          <h4 className="font-medium mb-2">{template.name}</h4>
-                          <p className="text-sm text-gray-600 mb-2">{template.description}</p>
-                          <Badge variant="secondary">{template.category}</Badge>
-                        </CardContent>
-                      </Card>
-                    ))}
                   </div>
                 </CardContent>
               </Card>
@@ -597,6 +734,9 @@ ${formData.callToAction || "Wat vind jij van deze ontwikkeling?"}
                     </TabsList>
 
                     <TabsContent value="schedule" className="space-y-6">
+                      <p className="text-sm text-gray-600">
+                        Kies datum en tijd. De post verschijnt in je planning; je kunt de content later kopiëren en plakken waar je wilt.
+                      </p>
                       <div className="grid md:grid-cols-2 gap-6">
                         <div>
                           <Label htmlFor="scheduledDate">Datum</Label>
@@ -617,23 +757,6 @@ ${formData.callToAction || "Wat vind jij van deze ontwikkeling?"}
                           />
                         </div>
                       </div>
-
-                      <div>
-                        <Label htmlFor="method">Publicatie methode</Label>
-                        <Select value={formData.linkedInMethod} onValueChange={(value) => setFormData(prev => ({ ...prev, linkedInMethod: value }))}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="DIRECT_API">Direct LinkedIn API</SelectItem>
-                            <SelectItem value="SHARE_API_V2">LinkedIn Share API v2</SelectItem>
-                            <SelectItem value="BUFFER">Buffer</SelectItem>
-                            <SelectItem value="ZAPIER">Zapier</SelectItem>
-                            <SelectItem value="MAKE_COM">Make.com</SelectItem>
-                            <SelectItem value="COPY_PASTE">Kopieer & Plak</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
                     </TabsContent>
 
                     <TabsContent value="publish" className="space-y-6">
@@ -643,26 +766,29 @@ ${formData.callToAction || "Wat vind jij van deze ontwikkeling?"}
                           <span className="font-medium">Direct publiceren</span>
                         </div>
                         <p className="text-sm text-green-700">
-                          Je post wordt direct gepubliceerd op LinkedIn. Zorg ervoor dat je content klaar is!
+                          Je post wordt als gepubliceerd gemarkeerd en verschijnt in je overzicht en planning. Vul hieronder de datum en tijd in (wanneer de post als gepubliceerd telt).
                         </p>
                       </div>
-
-                      <div>
-                        <Label htmlFor="method">Publicatie methode</Label>
-                        <Select value={formData.linkedInMethod} onValueChange={(value) => setFormData(prev => ({ ...prev, linkedInMethod: value }))}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="DIRECT_API">Direct LinkedIn API</SelectItem>
-                              <SelectItem value="SHARE_API_V2">LinkedIn Share API v2</SelectItem>
-                              <SelectItem value="BUFFER">Buffer</SelectItem>
-                              <SelectItem value="ZAPIER">Zapier</SelectItem>
-                              <SelectItem value="MAKE_COM">Make.com</SelectItem>
-                              <SelectItem value="COPY_PASTE">Kopieer & Plak</SelectItem>
-                            </SelectContent>
-                          </Select>
+                      <div className="grid md:grid-cols-2 gap-6">
+                        <div>
+                          <Label htmlFor="publishDate">Datum</Label>
+                          <Input
+                            id="publishDate"
+                            type="date"
+                            value={formData.scheduledDate}
+                            onChange={(e) => setFormData(prev => ({ ...prev, scheduledDate: e.target.value }))}
+                          />
                         </div>
+                        <div>
+                          <Label htmlFor="publishTime">Tijd</Label>
+                          <Input
+                            id="publishTime"
+                            type="time"
+                            value={formData.scheduledTime}
+                            onChange={(e) => setFormData(prev => ({ ...prev, scheduledTime: e.target.value }))}
+                          />
+                        </div>
+                      </div>
                       </TabsContent>
                     </Tabs>
 

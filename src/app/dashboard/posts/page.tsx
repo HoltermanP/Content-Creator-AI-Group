@@ -71,14 +71,34 @@ export default function PostsPage() {
       return;
     }
 
-    // TODO: Fetch posts from API
-    // For new users, show empty state
-    const mockPosts: Post[] = [
-      // Empty for new users - they need to create their first post
-    ];
-
-    setPosts(mockPosts);
-    setLoading(false);
+    async function loadPosts() {
+      try {
+        const res = await fetch("/api/calendar/posts", { credentials: "include" });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && Array.isArray(data.posts)) {
+          setPosts(
+            data.posts.map((p: any) => ({
+              id: p.id,
+              title: p.title,
+              content: p.content,
+              status: p.status,
+              scheduledAt: p.scheduledAt ?? undefined,
+              publishedAt: p.publishedAt ?? undefined,
+              createdAt: p.createdAt,
+              updatedAt: p.updatedAt,
+              company: p.company ? { id: p.company.id, name: p.company.name } : { id: "", name: "—" },
+              linkedinUrl: p.linkedinUrl,
+              imageUrl: p.imageUrl,
+            }))
+          );
+        }
+      } catch {
+        setPosts([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadPosts();
   }, [session, status, router]);
 
   const filteredPosts = posts.filter(post => {
@@ -464,7 +484,7 @@ export default function PostsPage() {
                       </div>
                       <div className="mt-3 p-3 bg-red-50 rounded-lg">
                         <p className="text-sm text-red-800">
-                          Publicatie mislukt. Controleer je LinkedIn verbinding en probeer opnieuw.
+                          Publicatie mislukt. Je kunt de post bewerken en opnieuw proberen.
                         </p>
                       </div>
                     </div>
