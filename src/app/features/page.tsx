@@ -1,3 +1,5 @@
+"use client";
+
 import { motion } from "framer-motion";
 import { ArrowLeft, Sparkles, Zap, Users, Calendar, BarChart3, MessageSquare, CheckCircle, Star, Target, Brain, Image, TrendingUp, Clock, Shield } from "lucide-react";
 import Link from "next/link";
