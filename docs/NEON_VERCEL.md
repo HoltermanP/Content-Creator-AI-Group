@@ -14,7 +14,10 @@ Voorbeeld:
 postgresql://user:pass@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require&channel_binding=require&connect_timeout=15
 ```
 
-**Let op:** de waarde moet beginnen met `postgresql://` en mag geen spaties of aanhalingstekens bevatten.
+**Let op:**
+- De waarde moet **exact** beginnen met `postgresql://` (geen spaties of aanhalingstekens ervoor).
+- Zet de variabele voor **Production** (en eventueel Preview) op het environment dat je gebruikt voor master/Dev.
+- In Vercel: plak de URL in het veld *Value* zonder extra aanhalingstekens.
 
 ## Neon IP allowlist
 
