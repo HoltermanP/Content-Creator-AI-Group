@@ -19,6 +19,10 @@ postgresql://user:pass@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require
 - Zet de variabele voor **Production** (en eventueel Preview) op het environment dat je gebruikt voor master/Dev.
 - In Vercel: plak de URL in het veld *Value* zonder extra aanhalingstekens.
 
+## Bestaande database opnieuw opbouwen (P3005)
+
+Als je een bestaande database koppelt en je krijgt **P3005** ("The database schema is not empty"), zie [NEON_RESET_DATABASE.md](./NEON_RESET_DATABASE.md) om de database leeg te maken zodat migraties opnieuw kunnen draaien.
+
 ## Neon IP allowlist
 
 Als je in Neon een **IP allowlist** hebt ingesteld, sta dan alle IP’s toe (0.0.0.0/0) of voeg de IP-ranges van Vercel toe, anders kunnen builds geen verbinding maken.
