@@ -2,26 +2,19 @@
 
 ## Environment variables op Vercel
 
-Zet **beide** in Vercel → Project → Settings → Environment Variables:
+Zet in Vercel → Project → Settings → Environment Variables:
 
-### 1. `DATABASE_URL` (pooled – voor de app)
+### `DATABASE_URL` (verplicht)
 - In Neon Console: **Connect** → **Pooled connection** (hostnaam bevat `-pooler`).
-- Aanbevolen: voeg toe `&connect_timeout=15`.
+- Gebruikt voor de app én voor migraties tijdens de build.
+- Voeg toe: `&connect_timeout=15` (helpt bij Neon cold start).
 
 Voorbeeld:
 ```
 postgresql://user:pass@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require&channel_binding=require&connect_timeout=15
 ```
 
-### 2. `DIRECT_URL` (direct – voor migraties)
-- In Neon Console: **Connect** → **Direct connection** (hostnaam **zonder** `-pooler`).
-- Prisma Migrate gebruikt deze verbinding tijdens de build.
-- Aanbevolen: voeg toe `&connect_timeout=15`.
-
-Voorbeeld:
-```
-postgresql://user:pass@ep-xxx.region.aws.neon.tech/neondb?sslmode=require&channel_binding=require&connect_timeout=15
-```
+**Let op:** de waarde moet beginnen met `postgresql://` en mag geen spaties of aanhalingstekens bevatten.
 
 ## Neon IP allowlist
 
